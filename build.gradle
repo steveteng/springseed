@@ -1,0 +1,296 @@
+apply plugin: 'java'
+apply plugin: 'spring-boot'
+apply plugin: 'os-package'
+apply plugin: 'idea'
+apply plugin: 'maven-publish'
+
+goPipeLineLable = "$System.env.GO_PIPELINE_LABEL"
+if (goPipeLineLable == "null") {
+    goPipeLineLable = "devbuild"
+}
+
+artifactName = 'springseed'
+buildVersion = "$goPipeLineLable"
+
+jar {
+    baseName = "$artifactName"
+    version =  "$buildVersion"
+}
+
+test {
+    exclude '**/**'
+    println "TASK:Test is prohibited. PLEASE use ut:unit test, it:integration test, at:acceptance test instead"
+}
+
+task ut(type: Test) {
+    include '**/*Test*'
+    exclude '**/*AcceptanceTest*'
+    exclude '**/*IntegrationTest*'
+}
+
+task it(type: Test) {
+    include '**/*IntegrationTest*'
+}
+
+task at(type: Test) {
+    exclude '**/**'
+    println "FIXME : ENABLE HEADLESS MODE FOR WEB DRVIER"
+    //include "**/*AcceptanceTest*"
+}
+
+buildscript {
+    repositories {
+        maven {
+            url "http://nexus.nbnco.net.au/content/groups/public"
+        }
+    }
+    dependencies {
+        classpath 'org.springframework.boot:spring-boot-gradle-plugin:1.0.0.RC1'
+        classpath 'com.netflix.nebula:gradle-ospackage-plugin:1.10.0'
+    }
+}
+
+repositories {
+    maven {
+        url "http://nexus.nbnco.net.au/content/groups/public"
+    }
+}
+
+configurations {
+    compile.exclude module: 'spring-boot-starter-tomcat'
+}
+
+dependencies {
+
+    compile 'org.springframework.boot:spring-boot-starter-web:1.0.0.RC4'
+    compile 'org.springframework.boot:spring-boot-starter-data-jpa:1.0.0.RC4'
+    compile 'org.springframework.boot:spring-boot-starter-jetty:1.0.0.RC4'
+    compile 'org.springframework.boot:spring-boot-starter-actuator:1.0.0.RC4'
+    compile 'commons-fileupload:commons-fileupload:1.3.1'
+
+    compile 'com.fasterxml.jackson.core:jackson-databind:2.3.0'
+    compile 'org.hibernate.javax.persistence:hibernate-jpa-2.0-api:1.0.1.Final'
+    compile 'org.hsqldb:hsqldb:2.3.1'
+    compile 'mysql:mysql-connector-java:5.1.29'
+    compile 'org.yaml:snakeyaml:1.13'
+
+    testCompile 'junit:junit:4.11'
+    testCompile 'org.mockito:mockito-core:1.9.5'
+    compile 'org.seleniumhq.selenium:selenium-api:2.40.0'
+    compile 'org.seleniumhq.selenium:selenium-firefox-driver:2.40.0'
+    compile 'org.seleniumhq.selenium:selenium-chrome-driver:2.40.0'
+    compile 'org.seleniumhq.selenium:selenium-htmlunit-driver:2.40.0'
+    compile 'org.seleniumhq.selenium:selenium-java:2.40.0'
+//    compile 'org.seleniumhq.selenium:selenium-server:2.40.0'
+    compile 'org.seleniumhq.selenium:selenium-remote-driver:2.40.0'
+    compile 'org.seleniumhq.selenium:selenium-support:2.40.0'
+    compile 'org.fluentlenium:fluentlenium-core:0.9.2'
+    compile 'org.fluentlenium:fluentlenium-parent:0.9.2'
+    compile 'com.google.guava:guava:14.0.1'
+    compile 'org.hamcrest:hamcrest-all:1.3'
+    compile 'au.com.nbnco.portal.security:properties-crypto:1.0'
+    compile 'com.googlecode.lambdaj:lambdaj:2.3.3'
+}
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '1.11'
+}
+
+ospackage {
+    packageName = "$artifactName"
+    version = "$buildVersion"
+    arch = X86_64
+    os = LINUX
+}
+
+task buildAppRpm(type: Rpm) {
+    packageName = "$artifactName"
+
+    postInstall = file('src/main/resources/scripts/post_install.sh')
+    preUninstall = file('src/main/resources/scripts/pre_uninstall.sh')
+
+    into '/opt/nbnco/applications/springseed'
+
+    from(jar.outputs.files) {
+        into 'lib'
+        rename '(.+)-(.+).jar', '$1.jar'
+    }
+    from('src/main/resources/conf') {
+        into 'conf'
+    }
+    from('src/main/resources/wrapper') {
+        into 'wrapper'
+        fileMode = 0550
+    }
+    from('src/main/resources/scripts') {
+        into 'bin'
+        fileMode = 0550
+    }
+    link('/etc/init.d/springseed','/opt/nbnco/applications/springseed/bin/springseed')
+}
+buildAppRpm.dependsOn build
+
+task buildConfCiRpm(type: Rpm) {
+    packageName = "${artifactName}-ci"
+
+    postInstall = file('src/main/resources/scripts/post_install_conf.sh')
+    requires("${artifactName}","$buildVersion",EQUAL)
+
+    into '/opt/nbnco/applications/springseed'
+
+    from("src/main/resources/env/application-ci.yml") {
+        into 'conf'
+    }
+
+    rename '(.+)-ci(.+)', '$1$2'
+}
+buildConfCiRpm.dependsOn build
+
+task buildConfDev1Rpm(type: Rpm) {
+    packageName = "${artifactName}-dev1"
+
+    into '/opt/nbnco/applications/springseed/conf'
+
+    from("src/main/resources/env/application-dev1.yml") {
+        into 'lib'
+    }
+
+    rename '(.+)-dev1(.+)', '$1$2'
+}
+buildConfDev1Rpm.dependsOn build
+
+task buildConfDev2Rpm(type: Rpm) {
+    packageName = "${artifactName}-dev2"
+
+    into '/opt/nbnco/applications/springseed/conf'
+
+    from("src/main/resources/env/application-dev2.yml") {
+        into 'lib'
+    }
+
+    rename '(.+)-dev2(.+)', '$1$2'
+}
+buildConfDev2Rpm.dependsOn build
+
+task buildConfSit1Rpm(type: Rpm) {
+    packageName = "${artifactName}-sit1"
+
+    into '/opt/nbnco/applications/springseed/conf'
+
+    from("src/main/resources/env/application-sit1.yml") {
+        into 'lib'
+    }
+
+    rename '(.+)-sit1(.+)', '$1$2'
+}
+buildConfSit1Rpm.dependsOn build
+
+task buildConfSit2Rpm(type: Rpm) {
+    packageName = "${artifactName}-sit2"
+
+    into '/opt/nbnco/applications/springseed/conf'
+
+    from("src/main/resources/env/application-sit2.yml") {
+        into 'lib'
+    }
+
+    rename '(.+)-sit2(.+)', '$1$2'
+}
+buildConfSit2Rpm.dependsOn build
+
+task buildConfProdRpm(type: Rpm) {
+    packageName = "${artifactName}-prod"
+
+    into '/opt/nbnco/applications/springseed/conf'
+
+    from("src/main/resources/env/application-prod.yml") {
+        into 'lib'
+    }
+
+    rename '(.+)-prod(.+)', '$1$2'
+}
+buildConfProdRpm.dependsOn build
+
+task buildConfPsupRpm(type: Rpm) {
+    packageName = "${artifactName}-psup"
+
+    into '/opt/nbnco/applications/springseed/conf'
+
+    from("src/main/resources/env/application-psup.yml") {
+        into 'lib'
+    }
+
+    rename '(.+)-psup(.+)', '$1$2'
+}
+buildConfPsupRpm.dependsOn build
+
+publishing {
+    publications {
+        appRpm(MavenPublication) {
+            groupId 'au.com.nbnco'
+            artifactId "$artifactName"
+            version "$buildVersion"
+            artifact "build/distributions/$artifactName-$buildVersion"+".x86_64.rpm"
+        }
+        confCi(MavenPublication) {
+            groupId 'au.com.nbnco'
+            artifactId "$artifactName-ci"
+            version "$buildVersion"
+            artifact "build/distributions/$artifactName-ci-$buildVersion"+".x86_64.rpm"
+        }
+        confDev1(MavenPublication) {
+            groupId 'au.com.nbnco'
+            artifactId "$artifactName-dev1"
+            version "$buildVersion"
+            artifact "build/distributions/$artifactName-dev1-$buildVersion"+".x86_64.rpm"
+        }
+        confDev2(MavenPublication) {
+            groupId 'au.com.nbnco'
+            artifactId "$artifactName-dev2"
+            version "$buildVersion"
+            artifact "build/distributions/$artifactName-dev2-$buildVersion"+".x86_64.rpm"
+        }
+        confSit1(MavenPublication) {
+            groupId 'au.com.nbnco'
+            artifactId "$artifactName-sit1"
+            version "$buildVersion"
+            artifact "build/distributions/$artifactName-sit1-$buildVersion"+".x86_64.rpm"
+        }
+        confSit2(MavenPublication) {
+            groupId 'au.com.nbnco'
+            artifactId "$artifactName-sit2"
+            version "$buildVersion"
+            artifact "build/distributions/$artifactName-sit2-$buildVersion"+".x86_64.rpm"
+        }
+        confProd(MavenPublication) {
+            groupId 'au.com.nbnco'
+            artifactId "$artifactName-prod"
+            version "$buildVersion"
+            artifact "build/distributions/$artifactName-prod-$buildVersion"+".x86_64.rpm"
+        }
+        confPsup(MavenPublication) {
+            groupId 'au.com.nbnco'
+            artifactId "$artifactName-psup"
+            version "$buildVersion"
+            artifact "build/distributions/$artifactName-psup-$buildVersion"+".x86_64.rpm"
+        }
+    }
+    repositories {
+        maven {
+        credentials {
+            username "$System.env.STOMP_USER"
+            password "$System.env.STOMP_PASSWORD"
+        }
+        url "http://nexus.nbnco.net.au/content/repositories/yum"
+        }
+    }
+}
+
+publish.dependsOn buildAppRpm
+publish.dependsOn buildConfCiRpm
+publish.dependsOn buildConfDev1Rpm
+publish.dependsOn buildConfDev2Rpm
+publish.dependsOn buildConfSit1Rpm
+publish.dependsOn buildConfSit2Rpm
+publish.dependsOn buildConfProdRpm
+publish.dependsOn buildConfPsupRpm
