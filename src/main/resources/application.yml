@@ -1,10 +1,10 @@
 #jetty:
 #    host: 127.2.44.1
-server:
-    port: 8083
+#server:
+#    port: 8083
 #    address: 127.2.44.1
-management:
-    port: 8080
+#management:
+#    port: 8080
 #    address: 127.2.44.1
 
 spring:
